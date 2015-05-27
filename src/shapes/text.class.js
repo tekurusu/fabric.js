@@ -6,8 +6,7 @@
       extend = fabric.util.object.extend,
       clone = fabric.util.object.clone,
       toFixed = fabric.util.toFixed,
-      supportsLineDash = fabric.StaticCanvas.supports('setLineDash'),
-      NUM_FRACTION_DIGITS = fabric.Object.NUM_FRACTION_DIGITS;
+      supportsLineDash = fabric.StaticCanvas.supports('setLineDash');
 
   if (fabric.Text) {
     fabric.warn('fabric.Text is already defined');
@@ -58,6 +57,13 @@
      * @private
      */
     _reNewline: /\r?\n/,
+    
+    /**
+     * Use this regular expression to filter for whitespace that is not a new line.
+     * Mostly used when text is 'justify' aligned.
+     * @private
+     */
+    _reSpacesAndTabs: /[ \t\r]+/g,
 
     /**
      * Retrieves object's fontSize
@@ -329,7 +335,7 @@
         ctx = fabric.util.createCanvasElement().getContext('2d');
         this._setTextStyles(ctx);
       }
-      this._textLines = this.text.split(this._reNewline);
+      this._textLines = this._splitTextIntoLines();
       this._clearCache();
       var currentTextAlign = this.textAlign;
       this.textAlign = 'left';
@@ -374,6 +380,8 @@
       this._setupCompositeOperation(ctx);
       this._renderTextFill(ctx);
       this._renderTextStroke(ctx);
+      this._restoreCompositeOperation(ctx);
+      this._removeShadow(ctx);
       ctx.restore();
     },
 
@@ -434,18 +442,7 @@
      * @param {Number} top Top position of text
      */
     _renderChars: function(method, ctx, chars, left, top) {
-      // remove Text word from method var
-      var shortM = method.slice(0, -4);
-      if (this[shortM].toLive) {
-        var offsetX = -this.width / 2 + this[shortM].offsetX || 0,
-            offsetY = -this.height / 2 + this[shortM].offsetY || 0;
-        ctx.save();
-        ctx.translate(offsetX, offsetY);
-        left -= offsetX;
-        top -= offsetY;
-      }
       ctx[method](chars, left, top);
-      this[shortM].toLive && ctx.restore();
     },
 
     /**
@@ -467,14 +464,14 @@
         return;
       }
 
-      var lineWidth = this._getLineWidth(ctx, lineIndex),
+      var lineWidth = Math.floor(this._getLineWidth(ctx, lineIndex)),
           totalWidth = this.width;
       if (totalWidth >= lineWidth) {
         // stretch the line
-        var words = line.split(/\s+/),
+        var words = line.split(this._reSpacesAndTabs),
             wordsWidth = this._getWidthOfWords(ctx, line, lineIndex),
             widthDiff = totalWidth - wordsWidth,
-            numSpaces = words.length - 1,
+            numSpaces = line.length - line.replace(this._reSpacesAndTabs, '').length,
             spaceWidth = widthDiff / numSpaces,
             leftOffset = 0;
 
@@ -487,7 +484,7 @@
         this._renderChars(method, ctx, line, left, top, lineIndex);
       }
     },
-
+    
     /**
      * @private
      * @param {CanvasRenderingContext2D} ctx Context to render on
@@ -538,6 +535,9 @@
         );
         lineHeights += heightOfLine;
       }
+      if (this.shadow && !this.shadow.affectStroke) {
+        this._removeShadow(ctx);
+      }
     },
 
     /**
@@ -550,10 +550,6 @@
       }
 
       var lineHeights = 0;
-
-      if (this.shadow && !this.shadow.affectStroke) {
-        this._removeShadow(ctx);
-      }
 
       ctx.save();
 
@@ -681,10 +677,6 @@
      */
     _shouldClearCache: function() {
       var shouldClear = false;
-      if (this._forceClearCache) {
-        this._forceClearCache = false;
-        return true;
-      }
       for (var prop in this._dimensionAffectingProps) {
         if (this['__' + prop] !== this[prop]) {
           this['__' + prop] = this[prop];
@@ -799,6 +791,14 @@
     },
 
     /**
+     * Returns the text as an array of lines.
+     * @returns {Array} Lines in the text
+     */
+    _splitTextIntoLines: function() {
+      return this.text.split(this._reNewline);
+    },
+
+    /**
      * Returns object representation of an instance
      * @param {Array} [propertiesToInclude] Any properties that you might want to additionally include in the output
      * @return {Object} Object representation of an instance
@@ -904,9 +904,9 @@
         - textTopOffset + height - this.height / 2;
       textSpans.push(
         '<tspan x="',
-          toFixed(textLeftOffset + this._getLineLeftOffset(this.__lineWidths[i]), NUM_FRACTION_DIGITS), '" ',
+          toFixed(textLeftOffset + this._getLineLeftOffset(this.__lineWidths[i]), 4), '" ',
           'y="',
-          toFixed(yPos, NUM_FRACTION_DIGITS),
+          toFixed(yPos, 4),
           '" ',
           // doing this on <tspan> elements since setting opacity
           // on containing <text> one doesn't work in Illustrator
@@ -921,13 +921,13 @@
         '\t\t<rect ',
           this._getFillAttributes(this.textBackgroundColor),
           ' x="',
-          toFixed(textLeftOffset + this._getLineLeftOffset(this.__lineWidths[i]), NUM_FRACTION_DIGITS),
+          toFixed(textLeftOffset + this._getLineLeftOffset(this.__lineWidths[i]), 4),
           '" y="',
-          toFixed(height - this.height / 2, NUM_FRACTION_DIGITS),
+          toFixed(height - this.height / 2, 4),
           '" width="',
-          toFixed(this.__lineWidths[i], NUM_FRACTION_DIGITS),
+          toFixed(this.__lineWidths[i], 4),
           '" height="',
-          toFixed(this._getHeightOfLine(this.ctx, i) / this.lineHeight, NUM_FRACTION_DIGITS),
+          toFixed(this._getHeightOfLine(this.ctx, i) / this.lineHeight, 4),
         '"></rect>\n');
     },
 
@@ -937,13 +937,13 @@
           '\t\t<rect ',
             this._getFillAttributes(this.backgroundColor),
             ' x="',
-            toFixed(-this.width / 2, NUM_FRACTION_DIGITS),
+            toFixed(-this.width / 2, 4),
             '" y="',
-            toFixed(-this.height / 2, NUM_FRACTION_DIGITS),
+            toFixed(-this.height / 2, 4),
             '" width="',
-            toFixed(this.width, NUM_FRACTION_DIGITS),
+            toFixed(this.width, 4),
             '" height="',
-            toFixed(this.height, NUM_FRACTION_DIGITS),
+            toFixed(this.height, 4),
           '"></rect>\n');
       }
     },

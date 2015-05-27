@@ -41,6 +41,7 @@
         // Track IText instances per-canvas. Only register in this array once added
         // to a canvas; we don't want to leak a reference to the instance forever
         // simply because it existed at some point.
+        //
         // (Might be added to a collection, but not on a canvas.)
         if (_this.canvas) {
           _this.canvas._iTextInstances = _this.canvas._iTextInstances || [];
@@ -278,8 +279,8 @@
       var selectedText = this.getSelectedText(),
           numNewLines = 0;
 
-      for (var i = 0, len = selectedText.length; i < len; i++) {
-        if (selectedText[i] === '\n') {
+      for (var i = 0, chars = selectedText.split(''), len = chars.length; i < len; i++) {
+        if (chars[i] === '\n') {
           numNewLines++;
         }
       }
@@ -338,6 +339,9 @@
      */
     enterEditing: function() {
       if (this.isEditing || !this.editable) {
+        if(this.hiddenTextarea) {
+          this.hiddenTextarea.focus();
+        }
         return;
       }
 
@@ -378,8 +382,8 @@
     },
 
     /**
-     * Initializes "mousemove" event handler
-     */
+    * Initializes "mousemove" event handler
+    */
     initMouseMoveHandler: function() {
       var _this = this;
       this.canvas.on('mouse:move',  function(options) {
@@ -503,21 +507,28 @@
      * @private
      */
     _removeCharsFromTo: function(start, end) {
-      while (end !== start) {
-        this._removeSingleCharAndStyle(start + 1);
-        end--;
+
+      var i = end;
+      while (i !== start) {
+
+        var prevIndex = this.get2DCursorLocation(i).charIndex;
+        i--;
+
+        var index = this.get2DCursorLocation(i).charIndex,
+            isNewline = index > prevIndex;
+
+        if (isNewline) {
+          this.removeStyleObject(isNewline, i + 1);
+        }
+        else {
+          this.removeStyleObject(this.get2DCursorLocation(i).charIndex === 0, i);
+        }
+
       }
-      this.setSelectionStart(start);
-    },
 
-    _removeSingleCharAndStyle: function(index) {
-      var isBeginningOfLine = this.text[index - 1] === '\n',
-          indexStyle = isBeginningOfLine ? index : index - 1;
-      this.removeStyleObject(isBeginningOfLine, indexStyle);
-      this.text = this.text.slice(0, index - 1) +
-                  this.text.slice(index);
-
-      this._textLines = this.text.split(this._reNewline);
+      this.set('text', this.text.slice(0, start) +
+                  this.text.slice(end));
+      this._clearCache();
     },
 
     /**
@@ -525,17 +536,22 @@
      * @param {String} _chars Characters to insert
      */
     insertChars: function(_chars, useCopiedStyle) {
-      if (this.selectionEnd - this.selectionStart > 1) {
-        this._removeCharsFromTo(this.selectionStart, this.selectionEnd);
-        this.setSelectionEnd(this.selectionStart);
+      var isEndOfLine = this.text.slice(this.selectionStart, this.selectionStart + 1) === '\n';
+
+      this.set('text', this.text.slice(0, this.selectionStart) +
+                    _chars +
+                  this.text.slice(this.selectionEnd));
+
+      if (this.selectionStart === this.selectionEnd) {
+        this.insertStyleObjects(_chars, isEndOfLine, useCopiedStyle);
       }
-      var isEndOfLine = this.text[this.selectionStart] === '\n';
-      this.text = this.text.slice(0, this.selectionStart) +
-                  _chars + this.text.slice(this.selectionEnd);
-      this.insertStyleObjects(_chars, isEndOfLine, useCopiedStyle);
+      // else if (this.selectionEnd - this.selectionStart > 1) {
+      // TODO: replace styles properly
+      // console.log('replacing MORE than 1 char');
+      // }
       this.setSelectionStart(this.selectionStart + _chars.length);
       this.setSelectionEnd(this.selectionStart);
-
+      this._clearCache();
       this.canvas && this.canvas.renderAll();
 
       this.setCoords();
@@ -557,12 +573,8 @@
         this.styles[lineIndex + 1] = { };
       }
 
-      var currentCharStyle = { },
+      var currentCharStyle = this.styles[lineIndex][charIndex - 1],
           newLineStyles = { };
-
-      if (this.styles[lineIndex] && this.styles[lineIndex][charIndex - 1]) {
-        currentCharStyle = this.styles[lineIndex][charIndex - 1];
-      }
 
       // if there's nothing after cursor,
       // we clone current char style onto the next (otherwise empty) line
@@ -582,7 +594,7 @@
         }
         this.styles[lineIndex + 1] = newLineStyles;
       }
-      this._forceClearCache = true;
+      this._clearCache();
     },
 
     /**
@@ -612,7 +624,7 @@
 
       this.styles[lineIndex][charIndex] =
         style || clone(currentLineStyles[charIndex - 1]);
-      this._forceClearCache = true;
+      this._clearCache();
     },
 
     /**
@@ -636,7 +648,7 @@
         this.insertNewlineStyleObject(lineIndex, charIndex, isEndOfLine);
       }
       else {
-        if (useCopiedStyle) {
+        if (useCopiedStyle && typeof this.copiedStyles !== 'undefined') {
           this._insertStyles(this.copiedStyles);
         }
         else {
@@ -672,12 +684,8 @@
         var numericLine = parseInt(line, 10);
         if (numericLine > lineIndex) {
           this.styles[numericLine + offset] = clonedStyles[numericLine];
-          if (!clonedStyles[numericLine - offset]) {
-            delete this.styles[numericLine];
-          }
         }
       }
-      //TODO: evaluate if delete old style lines with offset -1
     },
 
     /**
@@ -708,14 +716,14 @@
         }
 
         this.shiftLineStyles(lineIndex, -1);
-
       }
       else {
         var currentLineStyles = this.styles[lineIndex];
 
         if (currentLineStyles) {
-          delete currentLineStyles[charIndex];
-          //console.log('deleting', lineIndex, charIndex + offset);
+          var offset = this.selectionStart === this.selectionEnd ? -1 : 0;
+          delete currentLineStyles[charIndex + offset];
+          // console.log('deleting', lineIndex, charIndex + offset);
         }
 
         var currentLineStylesCloned = clone(currentLineStyles);
