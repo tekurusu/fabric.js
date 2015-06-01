@@ -158,7 +158,7 @@
          this.ctx.save();
          this._setTextStyles(this.ctx);
 
-         lines = this._wrapText(this.ctx, this.text);
+         var lines = this._wrapText(this.ctx, this.text);
 
          this.ctx.restore();
          return lines;
@@ -189,7 +189,7 @@
         * @param {Number} selectionStart Optional index. When not given, current selectionStart is used.
         * @returns {Object} This object has 'lineIndex' and 'charIndex' properties set to Numbers.
         */
-       get2DCursorLocation: function(selectionStart) {
+       /*get2DCursorLocation: function(selectionStart) {
          if (typeof selectionStart === 'undefined') {
            selectionStart = this.selectionStart;
          }
@@ -199,7 +199,7 @@
           * textBeforeCursor with newlines to handle the case of the
           * selectionStart value being on a word that, because of its length,
           * needs to be wrapped to the next line.
-          */
+          *
          var lineIndex = 0,
                  linesBeforeCursor = [],
                  allLines = this._textLines, temp = selectionStart;
@@ -234,7 +234,7 @@
            lineIndex: lineIndex,
            charIndex: charIndex
          };
-       },
+       },*/
        /**
         * Overrides superclass function and uses text wrapping data to get cursor
         * boundary offsets instead of the array of chars.

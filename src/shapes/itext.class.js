@@ -283,7 +283,7 @@
         }
       }
       /* not included in _extendStyles to avoid clearing cache more than once */
-      this._clearCache();
+      this._forceClearCache = true;
       return this;
     },
 
@@ -328,6 +328,7 @@
         ctx.save();
         ctx.transform.apply(ctx, this.canvas.viewportTransform);
         this.transform(ctx);
+        this.transformMatrix && ctx.transform.apply(ctx, this.transformMatrix);
       }
       else {
         ctx = this.ctx;
@@ -354,12 +355,19 @@
       if (typeof selectionStart === 'undefined') {
         selectionStart = this.selectionStart;
       }
-      var textBeforeCursor = this.text.slice(0, selectionStart),
-          linesBeforeCursor = textBeforeCursor.split(this._reNewline);
-
+      var len = this._textLines.length;
+      for (var i = 0; i < len; i++) {
+        if (selectionStart <= this._textLines[i].length) {
+          return {
+            lineIndex: i,
+            charIndex: selectionStart
+          };
+        }
+        selectionStart -= this._textLines[i].length + 1;
+      }
       return {
-        lineIndex: linesBeforeCursor.length - 1,
-        charIndex: linesBeforeCursor[linesBeforeCursor.length - 1].length
+        lineIndex: i - 1,
+        charIndex: this._textLines[i - 1].length < selectionStart ? this._textLines[i - 1].length : selectionStart
       };
     },
 
@@ -442,6 +450,7 @@
     _getCursorBoundariesOffsets: function(chars, typeOfBoundaries) {
 
       var lineLeftOffset = 0,
+
           lineIndex = 0,
           charIndex = 0,
           topOffset = 0,
@@ -565,6 +574,7 @@
      * @param {CanvasRenderingContext2D} ctx Context to render on
      */
     _renderChars: function(method, ctx, line, left, top, lineIndex) {
+
       if (this.isEmptyStyles()) {
         return this._renderCharsFast(method, ctx, line, left, top);
       }
@@ -581,7 +591,6 @@
       // set proper line offset
       var lineHeight = this._getHeightOfLine(ctx, lineIndex),
           lineLeftOffset = this._getCachedLineOffset(lineIndex),
-          chars = line.split(''),
           prevStyle,
           charsToRender = '';
 
@@ -589,7 +598,7 @@
 
       ctx.save();
       top -= lineHeight / this.lineHeight * this._fontSizeFraction;
-      for (var i = 0, len = chars.length; i <= len; i++) {
+      for (var i = 0, len = line.length; i <= len; i++) {
         prevStyle = prevStyle || this.getCurrentCharStyle(lineIndex, i);
         var thisStyle = this.getCurrentCharStyle(lineIndex, i + 1);
 
@@ -598,7 +607,7 @@
           charsToRender = '';
           prevStyle = thisStyle;
         }
-        charsToRender += chars[i];
+        charsToRender += line[i];
       }
 
       ctx.restore();
@@ -999,7 +1008,7 @@
       var line = this._textLines[lineIndex],
           wordsWidth = this._getWidthOfWords(ctx, line, lineIndex),
           widthDiff = this.width - wordsWidth,
-          numSpaces = line.length - line.replace(this._reSpacesAndTabs, '').length,
+          numSpaces = line.length - line.replace(/\s+/g, '').length,
           width = widthDiff / numSpaces;
       this.__widthOfSpace[lineIndex] = width;
       return width;
@@ -1081,6 +1090,7 @@
 
       ctx.restore();
     },
+
     /**
      * Returns object representation of an instance
      * @method toObject
